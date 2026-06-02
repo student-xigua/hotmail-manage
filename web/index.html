@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kang</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">✉</div>
+      <div>
+        <h1>kang</h1>
+        <p>作者QQ: 1075553843 | <a href="./api/accounts" target="_blank">API文档</a></p>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2><span>📥</span> 导入数据</h2>
+      <label class="field">
+        <span>分隔符设置</span>
+        <input id="delimiterInput" value="----" autocomplete="off">
+      </label>
+      <label id="dropZone" class="drop-zone" for="fileInput">
+        <input id="fileInput" type="file" accept=".txt,.csv">
+        <span class="drop-icon">☁</span>
+        <strong>拖拽或点击上传</strong>
+        <small>格式: 邮箱----密码----client_id----refresh_token</small>
+      </label>
+      <button id="pasteImportButton" class="button ghost" type="button">📋 粘贴文本导入</button>
+    </section>
+
+    <section class="panel">
+      <h2><span>⚙</span> 数据管理</h2>
+      <label class="field">
+        <span>默认获取数量</span>
+        <select id="defaultTopSelect">
+          <option value="1">1 条</option>
+          <option value="5">5 条</option>
+          <option value="10">10 条</option>
+          <option value="20">20 条</option>
+          <option value="30">30 条</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>API 模式</span>
+        <select id="apiModeSelect">
+          <option>Graph</option>
+          <option>Outlook</option>
+        </select>
+      </label>
+      <p class="hint">Graph：Microsoft Graph API，推荐优先使用。Outlook：旧 Outlook REST 接口，部分 token 兼容时备用。</p>
+      <button id="clearAllButton" class="button danger-outline" type="button">清空所有数据</button>
+    </section>
+  </aside>
+
+  <main class="workspace">
+    <section class="stats" aria-label="统计">
+      <article class="stat-card violet">
+        <span class="stat-icon">📧</span>
+        <p>总邮箱数</p>
+        <strong id="totalCount">0</strong>
+      </article>
+      <article class="stat-card green">
+        <span class="stat-icon">✨</span>
+        <p>今日导入</p>
+        <strong id="todayCount">0</strong>
+      </article>
+      <article class="stat-card rose">
+        <span class="stat-icon">📁</span>
+        <p>选中项</p>
+        <strong id="selectedCount">0</strong>
+      </article>
+    </section>
+
+    <section class="toolbar">
+      <div class="search-box">
+        <span>🔍</span>
+        <input id="searchInput" type="search" placeholder="搜索邮箱地址...">
+      </div>
+      <select id="statusFilter">
+        <option value="all">全部状态</option>
+        <option value="ready">待取件</option>
+        <option value="success">成功</option>
+        <option value="error">异常</option>
+        <option value="used">已用</option>
+      </select>
+      <div class="toolbar-spacer"></div>
+      <button id="selectAllToolbar" class="button light" type="button">☐ 全选</button>
+      <button id="batchFetchButton" class="button primary" type="button">📨 批量获取邮件</button>
+      <button id="exportButton" class="button light" type="button">📤 导出</button>
+      <button id="deleteSelectedButton" class="button danger" type="button">🗑 批量删除</button>
+    </section>
+
+    <section class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th class="check-col"><input id="headCheckbox" type="checkbox" aria-label="全选当前页"></th>
+            <th>序号</th>
+            <th>邮箱地址</th>
+            <th>密码</th>
+            <th>Client ID</th>
+            <th>Refresh Token</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="accountRows"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" hidden>暂无数据，请先导入邮箱。</div>
+      <footer class="pager">
+        <span id="totalRowsText">共 0 条</span>
+        <select id="pageSizeSelect">
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
+        <button id="prevPage" class="page-button" type="button">◀</button>
+        <span id="pageNumber" class="page-number">1</span>
+        <button id="nextPage" class="page-button" type="button">▶</button>
+        <span>前往</span>
+        <input id="pageJump" class="page-jump" type="number" min="1" value="1">
+        <span>页</span>
+      </footer>
+    </section>
+  </main>
+
+  <dialog id="importDialog" class="modal">
+    <form method="dialog">
+      <header>
+        <h2>粘贴文本导入</h2>
+        <button value="cancel" class="icon-button" aria-label="关闭">×</button>
+      </header>
+      <textarea id="importText" placeholder="邮箱----密码----client_id----refresh_token"></textarea>
+      <footer>
+        <button value="cancel" class="button light" type="button" id="cancelImportButton">取消</button>
+        <button value="default" class="button primary" type="button" id="confirmImportButton">导入</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="messagesDialog" class="modal large">
+    <form method="dialog">
+      <header>
+        <div>
+          <h2 id="messagesTitle">邮件列表</h2>
+          <p id="messagesMeta"></p>
+        </div>
+        <button value="cancel" class="icon-button" aria-label="关闭">×</button>
+      </header>
+      <div id="messagesList" class="message-list"></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
