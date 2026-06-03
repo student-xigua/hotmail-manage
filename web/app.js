@@ -97,6 +97,11 @@ async function loadAccounts() {
   render();
 }
 
+function accountImportTimestamp(account) {
+  const timestamp = Date.parse(account?.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function filteredAccounts() {
   const query = state.search.trim().toLowerCase();
   return state.accounts.filter((account) => {
@@ -110,7 +115,7 @@ function filteredAccounts() {
       account.lastError,
     ].join(' ').toLowerCase();
     return matchesStatus && (!query || haystack.includes(query));
-  });
+  }).sort((a, b) => accountImportTimestamp(b) - accountImportTimestamp(a));
 }
 
 function currentPageRows() {
@@ -212,11 +217,17 @@ async function saveSettings() {
 }
 
 async function fetchAccount(accountId, showDialog = true) {
-  const payload = await requestJson(`/api/accounts/${encodeURIComponent(accountId)}/messages`, {
+  const payload = await requestJson(`/api/accounts/${encodeURIComponent(accountId)}/code`, {
     method: 'POST',
     body: JSON.stringify({
       top: Number(el.defaultTopSelect.value) || 1,
       mailboxes: ['INBOX', 'Junk'],
+      senderFilters: [],
+      subjectFilters: [],
+      excludeCodes: [],
+      filterAfterTimestamp: 0,
+      requiredKeywords: [],
+      codePatterns: [],
     }),
   });
   if (payload.account) {
@@ -235,16 +246,21 @@ async function fetchAccount(accountId, showDialog = true) {
 }
 
 function openMessages(account, messages, meta = {}) {
+  const selectedMessageId = meta?.message?.id ? String(meta.message.id) : '';
+  const selectedCode = meta?.code ? String(meta.code) : '';
   el.messagesTitle.textContent = account?.email ? `${account.email} 的邮件` : '邮件列表';
   el.messagesMeta.textContent = `${messages.length} 条 | ${meta.transport || account?.transport || 'unknown'} | ${meta.tokenEndpoint || account?.tokenEndpoint || ''}`;
   el.messagesList.innerHTML = messages.length ? messages.map((message) => {
     const sender = message?.from?.emailAddress?.address || '';
+    const messageId = message?.id ? String(message.id) : '';
+    const code = message?.code || (selectedCode && messageId === selectedMessageId ? selectedCode : '');
+    const preview = code ? `Code: ${code}` : (message.bodyPreview || '');
     return `
       <article class="message-item">
         <strong>${escapeHtml(message.subject || '(无主题)')}</strong>
         <p>发件人: ${escapeHtml(sender || '-')}</p>
         <p>邮箱夹: ${escapeHtml(message.mailbox || '-')} | 时间: ${escapeHtml(message.receivedDateTime || '-')}</p>
-        <p>${escapeHtml(message.bodyPreview || '')}</p>
+        <p>${escapeHtml(preview)}</p>
       </article>
     `;
   }).join('') : '<div class="empty-state">没有读取到邮件。</div>';
