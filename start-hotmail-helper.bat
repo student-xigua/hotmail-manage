@@ -11,7 +11,7 @@ call :resolve_python
 if errorlevel 1 goto :python_not_found
 
 if "%~1"=="" (
-  call :run_single 17373
+  call :run_single 18080
   goto :eof
 )
 
@@ -57,10 +57,10 @@ exit /b 1
 :usage
 echo Usage:
 echo   start-hotmail-helper.bat
-echo   start-hotmail-helper.bat 17373
-echo   start-hotmail-helper.bat 17373 17374 17375
-echo   start-hotmail-helper.bat 17373,17374,17375
+echo   start-hotmail-helper.bat 18080
+echo   start-hotmail-helper.bat 18080 18081 18082
+echo   start-hotmail-helper.bat 18080,18081,18082
 echo.
-echo No arguments: start one helper on the default port 17373 in the current window.
+echo No arguments: start one helper on the default port 18080 in the current window.
 echo One or more ports: launch one helper window per port.
 exit /b 0

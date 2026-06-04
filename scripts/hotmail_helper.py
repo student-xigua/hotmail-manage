@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 17373
+DEFAULT_PORT = 18080
 LIVE_TOKEN_URL = "https://login.live.com/oauth20_token.srf"
 ENTRA_COMMON_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 ENTRA_CONSUMERS_TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
@@ -96,7 +96,7 @@ def resolve_server_config(argv=None, environ=None):
     parser.add_argument(
         "--port",
         default=runtime_environ.get("HOTMAIL_HELPER_PORT"),
-        help="Server port. Defaults to HOTMAIL_HELPER_PORT or 17373.",
+        help="Server port. Defaults to HOTMAIL_HELPER_PORT or 18080.",
     )
     args = parser.parse_args(argv)
     host = str(args.host or DEFAULT_HOST).strip() or DEFAULT_HOST
@@ -851,6 +851,23 @@ def decode_mime_header(value):
     return "".join(parts).strip()
 
 
+def clean_message_text(text, is_html=False):
+    source = str(text or "")
+    if not source:
+        return ""
+    if is_html:
+        source = re.sub(r"(?is)<(style|script|head|title|noscript)\b[^>]*>.*?</\1>", " ", source)
+        source = re.sub(r"(?is)<!--.*?-->", " ", source)
+        source = re.sub(r"(?is)<br\s*/?>", "\n", source)
+        source = re.sub(r"(?is)</(p|div|tr|table|section|article|h[1-6])\s*>", "\n", source)
+        source = re.sub(r"(?is)<[^>]+>", " ", source)
+    source = html.unescape(source)
+    source = re.sub(r"[ \t\r\f\v]+", " ", source)
+    source = re.sub(r"\n\s+", "\n", source)
+    source = re.sub(r"\n{3,}", "\n\n", source)
+    return source.strip()
+
+
 def extract_text_part(message):
     if message.is_multipart():
         for part in message.walk():
@@ -862,17 +879,17 @@ def extract_text_part(message):
             charset = part.get_content_charset() or "utf-8"
             text = payload.decode(charset, errors="ignore").strip()
             if part.get_content_type() == "text/plain" and text:
-                return text
+                return clean_message_text(text)
             if part.get_content_type() == "text/html" and text:
-                return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(text))).strip()
+                return clean_message_text(text, is_html=True)
         return ""
 
     payload = message.get_payload(decode=True) or b""
     charset = message.get_content_charset() or "utf-8"
     text = payload.decode(charset, errors="ignore").strip()
     if message.get_content_type() == "text/html":
-        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(text))).strip()
-    return text
+        return clean_message_text(text, is_html=True)
+    return clean_message_text(text)
 
 
 def mailbox_candidates(mailbox):
@@ -996,6 +1013,10 @@ def normalize_graph_message(message, mailbox):
     sender = message.get("from", {}) or {}
     email_addr = sender.get("emailAddress", {}) if isinstance(sender, dict) else {}
     received = str(message.get("receivedDateTime") or "").strip()
+    raw_body = message.get("body") if isinstance(message.get("body"), dict) else {}
+    raw_body_content = str(raw_body.get("content") or "").strip()
+    body = clean_message_text(raw_body_content, is_html=str(raw_body.get("contentType") or "").lower() == "html")
+    preview = body or clean_message_text(message.get("bodyPreview") or "")
     return {
         "id": str(message.get("id") or message.get("internetMessageId") or "").strip(),
         "mailbox": mailbox,
@@ -1006,7 +1027,10 @@ def normalize_graph_message(message, mailbox):
                 "name": str(email_addr.get("name") or "").strip(),
             }
         },
-        "bodyPreview": str(message.get("bodyPreview") or "").strip(),
+        "bodyPreview": preview[:500],
+        "body": {
+            "content": body or preview,
+        },
         "receivedDateTime": received,
         "receivedTimestamp": int(datetime.fromisoformat(received.replace("Z", "+00:00")).timestamp() * 1000) if received else 0,
     }
@@ -1018,6 +1042,11 @@ def normalize_outlook_message(message, mailbox):
     if isinstance(sender, dict) and not email_addr:
         email_addr = sender.get("emailAddress", {}) if isinstance(sender, dict) else {}
     received = str(message.get("ReceivedDateTime") or message.get("receivedDateTime") or "").strip()
+    raw_body_source = message.get("Body") or message.get("body")
+    raw_body = raw_body_source if isinstance(raw_body_source, dict) else {}
+    raw_body_content = str(raw_body.get("Content") or raw_body.get("content") or "").strip()
+    body = clean_message_text(raw_body_content, is_html=str(raw_body.get("ContentType") or raw_body.get("contentType") or "").lower() == "html")
+    preview = body or clean_message_text(message.get("BodyPreview") or message.get("bodyPreview") or "")
     return {
         "id": str(message.get("Id") or message.get("id") or "").strip(),
         "mailbox": mailbox,
@@ -1028,7 +1057,10 @@ def normalize_outlook_message(message, mailbox):
                 "name": str(email_addr.get("Name") or email_addr.get("name") or "").strip(),
             }
         },
-        "bodyPreview": str(message.get("BodyPreview") or message.get("bodyPreview") or "").strip(),
+        "bodyPreview": preview[:500],
+        "body": {
+            "content": body or preview,
+        },
         "receivedDateTime": received,
         "receivedTimestamp": int(datetime.fromisoformat(received.replace("Z", "+00:00")).timestamp() * 1000) if received else 0,
     }
@@ -1038,7 +1070,7 @@ def fetch_graph_messages(access_token, mailbox="INBOX", top=FETCH_LIMIT_DEFAULT)
     mailbox_id = normalize_mailbox_id(mailbox)
     query = urlencode({
         "$top": max(1, min(int(top or FETCH_LIMIT_DEFAULT), 30)),
-        "$select": "id,internetMessageId,subject,from,bodyPreview,receivedDateTime",
+        "$select": "id,internetMessageId,subject,from,bodyPreview,body,receivedDateTime",
         "$orderby": "receivedDateTime desc",
     })
     url = f"{GRAPH_API_ORIGIN}/v1.0/me/mailFolders/{mailbox_id}/messages?{query}"
@@ -1061,7 +1093,7 @@ def fetch_outlook_api_messages(access_token, mailbox="INBOX", top=FETCH_LIMIT_DE
     mailbox_id = normalize_mailbox_id(mailbox)
     query = urlencode({
         "$top": max(1, min(int(top or FETCH_LIMIT_DEFAULT), 30)),
-        "$select": "Id,Subject,From,BodyPreview,ReceivedDateTime",
+        "$select": "Id,Subject,From,BodyPreview,Body,ReceivedDateTime",
         "$orderby": "ReceivedDateTime desc",
     })
     url = f"{OUTLOOK_API_ORIGIN}/api/v2.0/me/mailfolders/{mailbox_id}/messages?{query}"

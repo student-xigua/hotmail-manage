@@ -254,7 +254,8 @@ function openMessages(account, messages, meta = {}) {
     const sender = message?.from?.emailAddress?.address || '';
     const messageId = message?.id ? String(message.id) : '';
     const code = message?.code || (selectedCode && messageId === selectedMessageId ? selectedCode : '');
-    const preview = code ? `Code: ${code}` : (message.bodyPreview || '');
+    const bodyContent = message?.body?.content || message.bodyPreview || '';
+    const preview = code ? `Code: ${code}` : bodyContent;
     return `
       <article class="message-item">
         <strong>${escapeHtml(message.subject || '(无主题)')}</strong>
